@@ -1,0 +1,13 @@
+.direnv
+result
+target
+
+
+/target
+dist
+templates
+public
+blog
+projects
+.DS_Store
+puggle.yaml
