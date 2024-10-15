@@ -329,7 +329,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     <title>{0}</title>
     <link rel=\"canonical\" href=\"/{1}\"/>
     <meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\"/>
-    <meta http-equiv=\"refresh\" content=\"30; url=/{1}\"/>
+    <meta http-equiv=\"refresh\" content=\"0; url=/{1}\"/>
   </head>
   <body>
     If you aren't redirected, you can manually click this link:
