@@ -237,18 +237,6 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
             }
         });
 
-    let standalone_pages: Vec<&Page> = config
-        .pages
-        .iter()
-        .filter(|page| {
-            if let Page::Standalone(_) = page {
-                true
-            } else {
-                false
-            }
-        })
-        .collect();
-
     for page in pages_with_entries {
         let mut metadata_list = vec![];
 
@@ -403,7 +391,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     }
 
     // Render standalone pages
-    for page in standalone_pages.iter() {
+    for page in config.pages.iter() {
         let template_path = page
             .get_template_path()
             .to_str()
