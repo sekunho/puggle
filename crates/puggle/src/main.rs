@@ -5,6 +5,8 @@ pub use clap::{Parser, Subcommand};
 pub struct Args {
     #[command(subcommand)]
     pub command: Command,
+    #[arg(short, long)]
+    pub config_path: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -17,9 +19,16 @@ pub enum Command {
 
 #[tokio::main]
 async fn main() {
-    let cli = Args::parse();
     color_eyre::install().unwrap();
-    let config = puggle_lib::Config::from_file().unwrap();
+
+    let cli = Args::parse();
+
+    let config_path = match cli.config_path {
+        Some(path) => path,
+        None => "puggle.yaml".to_string(),
+    };
+
+    let config = puggle_lib::Config::from_file(config_path.as_str()).unwrap();
 
     match cli.command {
         Command::Server => puggle_server::run(config).await.unwrap(),

@@ -36,7 +36,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yml = "0.0.10"
 
 ## Web
-axum = { version = "0.7", features = ["macros"] }
+hyper = { version = "1.5", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = [ "tokio", "service" ] }
+http-body-util = { version = "0.1" }
+bytes = { version = "1.8" }
+tower = { version = "0.5" }
 tower-http = { version = "0.5", features = ["fs"] }
 
 ## Templating
@@ -44,7 +48,7 @@ minijinja = { version = "2.0", features = ["loader", "multi_template"] }
 minijinja-contrib = { version = "2.0", features = ["datetime"] }
 
 ## Async
-tokio = { version = "1.40", features = ["net", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["net", "rt-multi-thread", "macros"] }
 
 ## Configuration
 config = { version = "0.13", default-features = false, features = ["yaml"] }
