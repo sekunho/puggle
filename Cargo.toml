@@ -17,7 +17,7 @@ homepage = "https://github.com/sekunho/puggle"
 include = ["../../LICENSE", "**/*.rs", "Cargo.toml"]
 license = "AGPL-3.0-only"
 repository = "https://github.com/sekunho/puggle"
-rust-version = "1.79"
+rust-version = "1.82"
 version = "0.1.0-alpha"
 
 [workspace.dependencies]
@@ -26,6 +26,7 @@ puggle_lib = { path = "crates/puggle_lib", version = "0.1.0-alpha" }
 puggle_server = { path = "crates/puggle_server", version = "0.1.0-alpha" }
 
 # External dependencies
+template = { git = "https://github.com/sekunho/pkg.git", branch = "main"}
 
 ## Markdown
 pulldown-cmark = { version = "0.12" }

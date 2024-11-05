@@ -1,15 +1,10 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
-use hyper::server::conn::http1;
-use hyper_util::{
-    rt::{TokioIo, TokioTimer},
-    service::TowerToHyperService,
-};
+use hyper::{server::conn::http1, service::service_fn, Response, StatusCode};
+use hyper_util::rt::{TokioIo, TokioTimer};
 use puggle_lib::Config;
 use thiserror::Error;
 use tokio::net::TcpListener;
-use tower::ServiceBuilder;
-use tower_http::services::ServeDir;
 
 #[derive(Debug, Error)]
 pub enum ServerError {
@@ -21,18 +16,30 @@ pub async fn run(config: Config) -> Result<(), ServerError> {
     let local_address = SocketAddr::from(([0, 0, 0, 0], 3000));
     let listener = TcpListener::bind(local_address).await?;
 
+    let template_handle = Arc::from(puggle_lib::init_template_handle(
+        config.templates_dir,
+        config.dest_dir.clone(),
+    ));
+
     loop {
         let (tcp, _) = listener.accept().await?;
         let io = TokioIo::new(tcp);
-        let huh = ServeDir::new(config.dest_dir.as_path());
+        let template_handle = Arc::clone(&template_handle);
 
         tokio::task::spawn(async move {
-            let svc = ServiceBuilder::new().service(huh);
-            let svc = TowerToHyperService::new(svc);
+            let service =
+                service_fn(move |_req| {
+                    let html = template_handle.render_template_str(
+                    minijinja::context!(),
+                    "{% extends \"layout/base.html\" %} {% block content %}hey{% endblock %}",
+                ).unwrap();
+
+                    async move { Response::builder().status(StatusCode::NOT_FOUND).body(html) }
+                });
 
             let result = http1::Builder::new()
                 .timer(TokioTimer::new())
-                .serve_connection(io, svc)
+                .serve_connection(io, service)
                 .await;
 
             if let Err(err) = result {

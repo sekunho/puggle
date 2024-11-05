@@ -17,6 +17,7 @@ minijinja = { workspace = true }
 minijinja-contrib = { workspace = true }
 serde = { workspace = true }
 serde_yml = { workspace = true }
+template.workspace = true
 time = { workspace = true }
 config = { workspace = true }
 color-eyre.workspace = true

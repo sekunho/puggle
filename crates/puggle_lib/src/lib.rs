@@ -111,6 +111,20 @@ impl TemplateHandle {
     }
 }
 
+pub fn init_template_handle(templates_path: PathBuf, dest_dir: PathBuf) -> template::Handle {
+    let mut builder = template::Handle::builder();
+    let mut env = builder.get_mut_env();
+
+    minijinja_contrib::add_to_environment(&mut env);
+    env.set_loader(minijinja::path_loader(templates_path.clone()));
+    env.add_filter("published_on", published_on);
+
+    builder
+        .set_watch_paths(vec![templates_path, dest_dir.clone()])
+        .set_fast_reload(true)
+        .build_autoreload()
+}
+
 #[derive(Debug, Error)]
 pub enum ParseFilesError {
     #[error("")]
