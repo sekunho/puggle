@@ -948,7 +948,7 @@ dependencies = [
 [[package]]
 name = "template"
 version = "0.1.0-alpha"
-source = "git+https://github.com/sekunho/pkg.git?branch=main#ea8635add2e2528a1315e9f618f5aee1b2c728a9"
+source = "git+https://github.com/sekunho/pkg.git?branch=main#b7d825b98cb02a4087d9fbb94625dc5f9b38518a"
 dependencies = [
  "minijinja",
  "minijinja-autoreload",
@@ -1142,7 +1142,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
