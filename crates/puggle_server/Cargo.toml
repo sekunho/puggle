@@ -11,6 +11,7 @@ version.workspace = true
 
 [dependencies]
 puggle_lib.workspace = true
+puggle_notifier.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 http-body-util.workspace = true
@@ -20,3 +21,5 @@ tokio.workspace = true
 thiserror = { workspace = true }
 minijinja = { workspace = true }
 minijinja-contrib = { workspace = true }
+notify.workspace = true
+futures.workspace = true

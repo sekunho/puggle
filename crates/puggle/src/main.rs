@@ -1,4 +1,10 @@
+use std::path::Path;
+
 pub use clap::{Parser, Subcommand};
+use futures::{channel::mpsc::Receiver, SinkExt, StreamExt};
+use notify::Watcher;
+use puggle_lib::Config;
+use tokio::sync::mpsc;
 
 #[derive(Parser)]
 #[command(version)]
@@ -31,7 +37,7 @@ async fn main() {
     let config = puggle_lib::Config::from_file(config_path.as_str()).unwrap();
 
     match cli.command {
-        Command::Server => puggle_server::run(config).await.unwrap(),
+        Command::Server => puggle_server::run(&config).await.unwrap(),
         Command::Build {} => puggle_lib::build_from_dir(config)
             .inspect_err(|e| println!("{:?}", e))
             .unwrap(),

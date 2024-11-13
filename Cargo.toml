@@ -23,6 +23,7 @@ version = "0.1.0-alpha"
 [workspace.dependencies]
 puggle = { path = "crates/puggle", version = "0.1.0-alpha" }
 puggle_lib = { path = "crates/puggle_lib", version = "0.1.0-alpha" }
+puggle_notifier = { path = "crates/puggle_notifier", version = "0.1.0-alpha" }
 puggle_server = { path = "crates/puggle_server", version = "0.1.0-alpha" }
 
 # External dependencies
@@ -63,3 +64,7 @@ color-eyre = { version = "0.6.3" }
 
 ## Types
 time = { version = "0.3", features = ["serde-well-known"] }
+
+notify = { version = "7.0" }
+
+futures = { version = "0.3" }
