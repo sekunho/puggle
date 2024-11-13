@@ -10,7 +10,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-analyzer-src.follows = "";
     };
-
   };
 
   outputs = { self, nixpkgs, flake-utils, pre-commit-hooks, fenix, crane }:
@@ -46,6 +45,7 @@
           buildInputs = [
           ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin (with pkgs; [
             libiconv
+            darwin.apple_sdk.frameworks.CoreServices
             darwin.apple_sdk.frameworks.CoreFoundation
             darwin.apple_sdk.frameworks.Security
             darwin.apple_sdk.frameworks.SystemConfiguration
@@ -90,7 +90,13 @@
               nixpkgs-fmt
               cargo-watch
               just
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin ([ pkgs.libiconv ]);
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin ([
+              pkgs.libiconv
+              darwin.apple_sdk.frameworks.CoreServices
+              darwin.apple_sdk.frameworks.CoreFoundation
+              darwin.apple_sdk.frameworks.Security
+              darwin.apple_sdk.frameworks.SystemConfiguration
+            ]);
           };
         };
       });

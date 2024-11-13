@@ -1,5 +1,5 @@
 [package]
-name = "puggle"
+name = "puggle_notifier"
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
@@ -10,13 +10,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-puggle_lib.workspace = true
-puggle_server.workspace = true
-
-clap.workspace = true
-config.workspace = true
-serde.workspace = true
 tokio.workspace = true
-color-eyre.workspace = true
 notify.workspace = true
+thiserror.workspace = true
 futures.workspace = true

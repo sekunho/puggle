@@ -67,10 +67,9 @@ enum Entry {
 }
 
 impl Config {
-    pub fn from_file() -> Result<Self, config::ConfigError> {
+    pub fn from_file(path: &str) -> Result<Self, config::ConfigError> {
         let conf = config::Config::builder()
-            .add_source(config::File::with_name("puggle.yaml").required(false))
-            .add_source(config::File::with_name("puggle.yml").required(false))
+            .add_source(config::File::with_name(path).required(false))
             .build()?;
 
         conf.try_deserialize()
@@ -110,6 +109,20 @@ impl TemplateHandle {
 
         Self { env }
     }
+}
+
+pub fn init_template_handle(templates_path: PathBuf, dest_dir: PathBuf) -> template::Handle {
+    let mut builder = template::Handle::builder();
+    let mut env = builder.get_mut_env();
+
+    minijinja_contrib::add_to_environment(&mut env);
+    env.set_loader(minijinja::path_loader(templates_path.clone()));
+    env.add_filter("published_on", published_on);
+
+    builder
+        .set_watch_paths(vec![templates_path, dest_dir.clone()])
+        .set_fast_reload(true)
+        .build_autoreload()
 }
 
 #[derive(Debug, Error)]
@@ -207,6 +220,7 @@ fn render_entry(
 }
 
 fn get_markdown_paths(dir: &Path) -> color_eyre::Result<Vec<PathBuf>> {
+    println!("{:?}", dir);
     let paths = std::fs::read_dir(dir)?
         .filter(|entry| {
             if let Ok(entry) = entry {

@@ -17,15 +17,17 @@ homepage = "https://github.com/sekunho/puggle"
 include = ["../../LICENSE", "**/*.rs", "Cargo.toml"]
 license = "AGPL-3.0-only"
 repository = "https://github.com/sekunho/puggle"
-rust-version = "1.79"
+rust-version = "1.82"
 version = "0.1.0-alpha"
 
 [workspace.dependencies]
 puggle = { path = "crates/puggle", version = "0.1.0-alpha" }
 puggle_lib = { path = "crates/puggle_lib", version = "0.1.0-alpha" }
+puggle_notifier = { path = "crates/puggle_notifier", version = "0.1.0-alpha" }
 puggle_server = { path = "crates/puggle_server", version = "0.1.0-alpha" }
 
 # External dependencies
+template = { git = "https://github.com/sekunho/pkg.git", branch = "main"}
 
 ## Markdown
 pulldown-cmark = { version = "0.12" }
@@ -36,7 +38,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yml = "0.0.10"
 
 ## Web
-axum = { version = "0.7", features = ["macros"] }
+hyper = { version = "1.5", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = [ "tokio", "service" ] }
+http-body-util = { version = "0.1" }
+bytes = { version = "1.8" }
+tower = { version = "0.5" }
 tower-http = { version = "0.5", features = ["fs"] }
 
 ## Templating
@@ -44,7 +50,7 @@ minijinja = { version = "2.0", features = ["loader", "multi_template"] }
 minijinja-contrib = { version = "2.0", features = ["datetime"] }
 
 ## Async
-tokio = { version = "1.40", features = ["net", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["net", "rt-multi-thread", "macros"] }
 
 ## Configuration
 config = { version = "0.13", default-features = false, features = ["yaml"] }
@@ -58,3 +64,7 @@ color-eyre = { version = "0.6.3" }
 
 ## Types
 time = { version = "0.3", features = ["serde-well-known"] }
+
+notify = { version = "7.0" }
+
+futures = { version = "0.3" }
