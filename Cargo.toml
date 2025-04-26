@@ -38,12 +38,12 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yml = "0.0.10"
 
 ## Web
-hyper = { version = "1.5", features = ["http1", "server"] }
+hyper = { version = "1.6", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = [ "tokio", "service" ] }
 http-body-util = { version = "0.1" }
 bytes = { version = "1.8" }
 tower = { version = "0.5" }
-tower-http = { version = "0.5", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs"] }
 
 ## Templating
 minijinja = { version = "2.0", features = ["loader", "multi_template"] }
@@ -66,5 +66,6 @@ color-eyre = { version = "0.6.3" }
 time = { version = "0.3", features = ["serde-well-known"] }
 
 notify = { version = "7.0" }
+notify-debouncer-mini = { version = "0.5" }
 
 futures = { version = "0.3" }

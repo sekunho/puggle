@@ -1,10 +1,52 @@
-use std::path::Path;
-
 pub use clap::{Parser, Subcommand};
-use futures::{channel::mpsc::Receiver, SinkExt, StreamExt};
-use notify::Watcher;
-use puggle_lib::Config;
-use tokio::sync::mpsc;
+
+#[derive(Debug)]
+pub struct Tree<T>
+where
+    T: PartialEq,
+{
+    pub arena: Vec<Node<T>>,
+}
+
+impl<T> Tree<T>
+where
+    T: PartialEq,
+{
+    pub fn new() -> Tree<T> {
+        Tree { arena: Vec::new() }
+    }
+}
+
+impl<T> Node<T>
+where
+    T: PartialEq,
+{
+    pub fn new_file(idx: i64, val: T) -> Node<T> {
+        Node::File {
+            idx,
+            val,
+            parent: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Node<T>
+where
+    T: PartialEq,
+{
+    File {
+        idx: i64,
+        val: T,
+        parent: Option<usize>,
+    },
+    Dir {
+        idx: i64,
+        val: T,
+        parent: Option<usize>,
+        children: Vec<usize>,
+    },
+}
 
 #[derive(Parser)]
 #[command(version)]
@@ -35,6 +77,8 @@ async fn main() {
     };
 
     let config = puggle_lib::Config::from_file(config_path.as_str()).unwrap();
+
+    println!("{:#?}", config);
 
     match cli.command {
         Command::Server => puggle_server::run(&config).await.unwrap(),

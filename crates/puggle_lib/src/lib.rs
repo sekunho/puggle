@@ -15,6 +15,12 @@ pub struct Config {
     pub pages: Vec<Page>,
     pub templates_dir: PathBuf,
     pub dest_dir: PathBuf,
+    pub preview: PreviewConfig,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PreviewConfig {
+    pub port: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -177,7 +183,7 @@ pub fn extract_metadata(parser: Parser) -> color_eyre::Result<Option<Metadata>> 
                 }
             }
             _ => {
-                break;
+                continue;
             }
         }
     }

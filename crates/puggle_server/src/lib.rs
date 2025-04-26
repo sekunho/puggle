@@ -1,21 +1,21 @@
+use std::{convert::Infallible, net::SocketAddr};
+use hyper::{
+    body::{Bytes, Incoming},
+    server::conn::http1,
+    Request, Response,
+};
+use http_body_util::Full;
+use hyper_util::rt::TokioIo;
+use tokio::net::TcpListener;
+
 use std::{
-    ffi::OsStr,
-    net::SocketAddr,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
-    time::Duration,
 };
 
-use futures::{channel::mpsc::Receiver, SinkExt, StreamExt};
-use hyper::{server::conn::http1, service::service_fn, Response, StatusCode, Uri};
-use hyper_util::rt::{TokioIo, TokioTimer};
-use notify::{
-    event::{CreateKind, DataChange, ModifyKind, RemoveKind},
-    Watcher,
-};
+use hyper_util::rt::TokioTimer;
 use puggle_lib::Config;
 use thiserror::Error;
-use tokio::net::TcpListener;
 
 #[derive(Debug, Error)]
 pub enum ServerError {
@@ -24,7 +24,7 @@ pub enum ServerError {
 }
 
 pub async fn run(config: &Config) -> Result<(), ServerError> {
-    let local_address = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let local_address = SocketAddr::from(([0, 0, 0, 0], config.preview.port));
     let listener = TcpListener::bind(local_address).await?;
 
     let template_handle = Arc::from(puggle_lib::init_template_handle(
@@ -32,10 +32,12 @@ pub async fn run(config: &Config) -> Result<(), ServerError> {
         config.dest_dir.clone(),
     ));
 
-    let mut notifier_handle = puggle_notifier::Handle::new().unwrap();
+    let mut build_notifier = puggle_notifier::Handle::new().unwrap();
+    let mut dest_dir_notifier = puggle_notifier::Handle::new().unwrap();
 
     let _ = tokio::join!(
-        notifier_handle.watch(Path::new(".")),
+        build_notifier.watch(Path::new("blog")),
+        dest_dir_notifier.watch(config.dest_dir.as_path()),
         execute_server(template_handle, listener),
     );
 
@@ -52,20 +54,13 @@ async fn execute_server(
         let template_handle = Arc::clone(&template_handle);
 
         tokio::task::spawn(async move {
-            let service =
-                service_fn(move |req| {
-                    let path = req.uri().path();
-                    let html = template_handle.render_template_str(
-                    minijinja::context!(),
-                    "{% extends \"layout/base.html\" %} {% block content %}hey{% endblock %}",
-                ).unwrap();
-
-                    async move { Response::builder().status(StatusCode::NOT_FOUND).body(html) }
-                });
+            let svc = hyper_util::service::TowerToHyperService::new(
+                tower_http::services::ServeDir::new("public")
+            );
 
             let result = http1::Builder::new()
                 .timer(TokioTimer::new())
-                .serve_connection(io, service)
+                .serve_connection(io, svc)
                 .await;
 
             if let Err(err) = result {
@@ -73,4 +68,8 @@ async fn execute_server(
             }
         });
     }
+}
+
+async fn hello(_: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
+    Ok(Response::new(Full::new(Bytes::from("Hello, World!"))))
 }

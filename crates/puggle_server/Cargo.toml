@@ -18,8 +18,10 @@ http-body-util.workspace = true
 bytes.workspace = true
 template.workspace = true
 tokio.workspace = true
-thiserror = { workspace = true }
-minijinja = { workspace = true }
-minijinja-contrib = { workspace = true }
+tower.workspace = true
+tower-http.workspace = true
+thiserror.workspace = true
+minijinja.workspace = true
+minijinja-contrib.workspace = true
 notify.workspace = true
 futures.workspace = true

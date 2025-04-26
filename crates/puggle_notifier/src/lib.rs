@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, path::Path};
+use std::{ffi::OsStr, os::unix::fs::MetadataExt, path::Path};
 
 use notify::{
     event::{CreateKind, DataChange, ModifyKind, RemoveKind},
@@ -40,18 +40,19 @@ impl Handle {
             if event.paths.iter().any(|a| {
                 a.file_name() == Some(OsStr::new("puggle.yaml"))
                     || a.extension() == Some(OsStr::new("md"))
-                // (a.starts_with(config.dest_dir)) && (a.extension() == Some(OsStr::new("yaml")))
             }) {
+                let path = event.paths.first().unwrap();
+                let huh = std::fs::metadata(path);
+                println!("{:#?}", huh.unwrap().ino());
                 match event.kind {
                     notify::EventKind::Create(CreateKind::File) => {
-                        println!("created a file {:#?}", event.paths)
+                        println!("created a file {:#?}", event)
                     }
                     notify::EventKind::Modify(ModifyKind::Data(DataChange::Content)) => {
-                        println!("modified a file/dir {:#?}", event.paths)
                     }
                     notify::EventKind::Remove(RemoveKind::File)
                     | notify::EventKind::Remove(RemoveKind::Folder) => {
-                        println!("removed a file/dir {:#?}", event.paths)
+                        println!("removed a file/dir {:#?}", event)
                     }
                     _ => (),
                 }
