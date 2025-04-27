@@ -1,5 +1,6 @@
 [package]
 name = "extra-pulldown-cmark"
+license = "MIT"
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
