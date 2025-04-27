@@ -11,12 +11,14 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-pulldown-cmark = { workspace = true }
-thiserror = { workspace = true }
-minijinja = { workspace = true }
-minijinja-contrib = { workspace = true }
-serde = { workspace = true }
-serde_yml = { workspace = true }
-time = { workspace = true }
-config = { workspace = true }
+pulldown-cmark.workspace = true
+thiserror.workspace = true
+minijinja.workspace = true
+minijinja-contrib.workspace = true
+serde.workspace = true
+serde_yml.workspace = true
+syntect.workspace = true
+two-face.workspace = true
+time.workspace = true
+config.workspace = true
 color-eyre.workspace = true
