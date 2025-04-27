@@ -5,7 +5,9 @@ use std::{
 };
 
 use minijinja::{value::Kwargs, Environment, State, Value};
-use pulldown_cmark::{CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Tag, TagEnd,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -143,14 +145,17 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
     let mut metadata = None;
     let mut record_metadata = false;
     let mut record_code_block = false;
+    let mut record_heading = false;
     let mut new_events = Vec::new();
     let syntax_set = two_face::syntax::extra_newlines();
     let mut syntax = syntax_set.find_syntax_plain_text();
     let theme_set = two_face::theme::extra();
     let theme = theme_set.get(two_face::theme::EmbeddedThemeName::GruvboxDark);
     let mut codeblock = String::new();
+    let mut heading_text = String::new();
 
     for event in parser {
+        println!("{:?}", event);
         match event {
             Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
                 record_metadata = true;
@@ -159,6 +164,14 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
             Event::End(TagEnd::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
                 record_metadata = false;
                 new_events.push(event);
+            }
+            Event::Code(CowStr::Borrowed(txt)) => {
+                if record_heading {
+                    let code = format!("<code>{txt}</code>");
+                    heading_text.push_str(code.as_ref());
+                } else {
+                    new_events.push(event);
+                }
             }
             Event::Text(CowStr::Borrowed(txt)) => {
                 if record_metadata {
@@ -169,7 +182,11 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                     codeblock.push_str(txt);
                 }
 
-                if !record_code_block {
+                if record_heading {
+                    heading_text.push_str(txt);
+                }
+
+                if !record_code_block && !record_heading {
                     new_events.push(event);
                 }
             }
@@ -191,6 +208,19 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
 
                 let html_event = Event::Html(CowStr::from(html));
                 new_events.push(html_event);
+            }
+            Event::Start(Tag::Heading { .. }) => {
+                record_heading = true;
+            }
+            Event::End(TagEnd::Heading(heading_level)) => {
+                let slug = heading_text.replace(" ", "-").to_lowercase();
+                let slug = slug.trim();
+                let heading =
+                    format!("<{heading_level} id=\"{slug}\"><a href=\"#{slug}\">{heading_text}</a></{heading_level}>");
+                let html_event = Event::Html(CowStr::from(heading));
+                new_events.push(html_event);
+                heading_text.clear();
+                record_heading = false;
             }
             e => {
                 new_events.push(e);
