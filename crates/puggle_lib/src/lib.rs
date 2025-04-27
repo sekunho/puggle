@@ -155,7 +155,6 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
     let mut heading_text = String::new();
 
     for event in parser {
-        println!("{:?}", event);
         match event {
             Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
                 record_metadata = true;
