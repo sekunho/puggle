@@ -225,7 +225,6 @@ fn render_entry(
     template_path: &Path,
     template_handle: &TemplateHandle,
 ) -> Result<String, minijinja::Error> {
-    println!("INNER:\n{inner}");
     let template = [
         format!("{{% extends \"{}\" %}}", template_path.to_string_lossy()),
         "{% block content %}".to_string(),
@@ -308,8 +307,6 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                                 "failed to extract metadata from file {:?}",
                                 file.as_path()
                             )))?;
-
-                        println!("{html_partial}");
 
                         let html = render_entry(
                             html_partial,
