@@ -336,6 +336,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "extra-pulldown-cmark"
+version = "0.1.0-alpha"
+dependencies = [
+ "pulldown-cmark",
+ "syntect",
+ "two-face",
+]
+
+[[package]]
 name = "eyre"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
