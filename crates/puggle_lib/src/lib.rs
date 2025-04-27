@@ -5,7 +5,7 @@ use std::{
 };
 
 use minijinja::{value::Kwargs, Environment, State, Value};
-use pulldown_cmark::{Event, MetadataBlockKind, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -128,48 +128,77 @@ pub enum ParseFilesError {
     TemplateRender(minijinja::Error),
 }
 
-pub fn parse(input: &str, opts: pulldown_cmark::Options) -> String {
-    let parser = Parser::new_ext(input, opts);
-    let mut html = String::new();
-
-    pulldown_cmark::html::push_html(&mut html, parser.into_iter());
-    html
-}
-
 #[derive(Debug, Error)]
 pub enum ExtractMetadataError {
     #[error("failed to deserialize file \"{0}\" metadata. reason: {1}")]
     Deserialize(PathBuf, serde_yml::Error),
 }
 
-pub fn extract_metadata(parser: Parser) -> color_eyre::Result<Option<Metadata>> {
+pub struct PuggleParser<'a> {
+    pub metadata: Option<Metadata>,
+    pub events: Vec<Event<'a>>,
+}
+
+pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
     let mut metadata = None;
-    let mut record = false;
+    let mut record_metadata = false;
+    let mut record_code_block = false;
+    let mut new_events = Vec::new();
+    let syntax_set = two_face::syntax::extra_newlines();
+    let mut syntax = syntax_set.find_syntax_plain_text();
+    let theme_set = two_face::theme::extra();
+    let theme = theme_set.get(two_face::theme::EmbeddedThemeName::GruvboxDark);
+    let mut codeblock = String::new();
 
     for event in parser {
-        if let Event::Start(Tag::MetadataBlock(_)) = event {
-            record = true;
-        }
-
         match event {
             Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
-                record = true;
+                record_metadata = true;
+                new_events.push(event);
             }
             Event::End(TagEnd::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
-                break;
+                record_metadata = false;
+                new_events.push(event);
             }
-            Event::Text(txt) => {
-                if record {
+            Event::Text(CowStr::Borrowed(txt)) => {
+                if record_metadata {
                     metadata = Some(txt.to_string());
                 }
+
+                if record_code_block {
+                    codeblock.push_str(txt);
+                }
+
+                if !record_code_block {
+                    new_events.push(event);
+                }
             }
-            _ => {
-                break;
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed(lang)))) => {
+                syntax = syntax_set.find_syntax_by_extension(lang).unwrap_or(syntax);
+                record_code_block = true;
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                let html = syntect::html::highlighted_html_for_string(
+                    codeblock.as_str(),
+                    &syntax_set,
+                    &syntax,
+                    &theme,
+                )
+                .unwrap();
+
+                codeblock.clear();
+                record_code_block = false;
+
+                let html_event = Event::Html(CowStr::from(html));
+                new_events.push(html_event);
+            }
+            e => {
+                new_events.push(e);
             }
         }
     }
 
-    if let Some(metadata) = metadata {
+    let metadata = if let Some(metadata) = metadata {
         let metadata: Metadata = serde_yml::from_str(metadata.as_str())?;
 
         let metadata = Metadata {
@@ -178,10 +207,16 @@ pub fn extract_metadata(parser: Parser) -> color_eyre::Result<Option<Metadata>> 
             ..metadata
         };
 
-        Ok(Some(metadata))
+        Some(metadata)
     } else {
-        Ok(None)
-    }
+        None
+    };
+
+    let pp = PuggleParser {
+        metadata,
+        events: new_events,
+    };
+    Ok(pp)
 }
 
 fn render_entry(
@@ -250,16 +285,20 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
 
                     for file in files {
                         let markdown = std::fs::read_to_string(file.as_path())?;
-                        let html_partial = parse(markdown.as_str(), cmark_opts);
                         let parser = Parser::new_ext(markdown.as_str(), cmark_opts);
-                        let metadata = extract_metadata(parser)?;
+                        let pp = parse(parser)?;
+
+                        let mut html_partial = String::new();
+
+                        pulldown_cmark::html::push_html(&mut html_partial, pp.events.into_iter());
 
                         let md_file_name = file
                             .as_path()
                             .file_stem()
                             .ok_or(ParseFilesError::FileName)?;
 
-                        let metadata = metadata
+                        let metadata = pp
+                            .metadata
                             .map(|metadata| Metadata {
                                 file_name: md_file_name.to_string_lossy().to_string(),
                                 ..metadata
@@ -342,14 +381,17 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                     template_path,
                 } => {
                     let markdown = std::fs::read_to_string(markdown_path.as_path())?;
-                    let html_partial = parse(markdown.as_str(), cmark_opts);
                     let parser = Parser::new_ext(markdown.as_str(), cmark_opts);
-                    let metadata = extract_metadata(parser)?;
+                    let pp = parse(parser)?;
+                    let mut html_partial = String::new();
+
+                    pulldown_cmark::html::push_html(&mut html_partial, pp.events.into_iter());
 
                     let md_file_name =
                         markdown_path.file_stem().ok_or(ParseFilesError::FileName)?;
 
-                    let metadata = metadata
+                    let metadata = pp
+                        .metadata
                         .map(|metadata| Metadata {
                             file_name: md_file_name.to_string_lossy().to_string(),
                             ..metadata
