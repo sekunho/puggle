@@ -5,9 +5,7 @@ use std::{
 };
 
 use minijinja::{value::Kwargs, Environment, State, Value};
-use pulldown_cmark::{
-    CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Tag, TagEnd,
-};
+use pulldown_cmark::{CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -288,7 +286,19 @@ fn get_markdown_paths(dir: &Path) -> color_eyre::Result<Vec<PathBuf>> {
 
 pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     let template_handle = TemplateHandle::new(config.templates_dir.as_path());
-    let cmark_opts = pulldown_cmark::Options::all();
+    let mut cmark_opts = pulldown_cmark::Options::empty();
+
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_TASKLISTS);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_MATH);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_GFM);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_SUPERSCRIPT);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_SUBSCRIPT);
+    cmark_opts.insert(pulldown_cmark::Options::ENABLE_WIKILINKS);
+
     let mut context: HashMap<&str, Vec<Metadata>> = HashMap::new();
 
     let pages_with_entries: Vec<&PageEntries> =
