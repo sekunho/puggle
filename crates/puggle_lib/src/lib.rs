@@ -131,7 +131,7 @@ pub enum ParseFilesError {
 #[derive(Debug, Error)]
 pub enum ExtractMetadataError {
     #[error("failed to deserialize file \"{0}\" metadata. reason: {1}")]
-    Deserialize(PathBuf, serde_yml::Error),
+    Deserialize(PathBuf, serde_yaml::Error),
 }
 
 pub struct PuggleParser<'a> {
@@ -226,7 +226,7 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
     }
 
     let metadata = if let Some(metadata) = metadata {
-        let metadata: Metadata = serde_yml::from_str(metadata.as_str())?;
+        let metadata: Metadata = serde_yaml::from_str(metadata.as_str())?;
 
         let metadata = Metadata {
             unix_created_at: metadata.created_at.map(|dt| dt.unix_timestamp()),
