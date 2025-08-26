@@ -38,7 +38,7 @@ serde_yaml = "0.9"
 
 ## Web
 axum = { version = "0.7", features = ["macros"] }
-tower-http = { version = "0.5", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "compression-br"] }
 
 ## Templating
 minijinja = { version = "2.0", features = ["loader", "multi_template"] }
