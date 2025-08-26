@@ -265,6 +265,14 @@ fn render_entry(
         .template_from_str(template.as_str())?
         .render(minijinja::context!(metadata => metadata))?;
 
+    let mut cfg = minify_html::Cfg::new();
+    cfg.minify_css = true;
+    cfg.minify_js = true;
+    cfg.keep_comments = false;
+
+    let html = minify_html::minify(html.as_bytes(), &cfg);
+    let html = String::from_utf8(html).unwrap();
+
     Ok(html)
 }
 
@@ -353,16 +361,6 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                             template_path.as_path(),
                             &template_handle,
                         )?;
-
-                        let mut cfg = minify_html::Cfg::new();
-                        cfg.minify_css = true;
-                        cfg.minify_js = true;
-                        cfg.keep_comments = false;
-
-                        let html = minify_html::minify(html.as_bytes(), &cfg);
-                        let html = String::from_utf8(html).unwrap();
-
-                        println!("{html}");
 
                         // Write to file
                         let target_file = PathBuf::from(config.dest_dir.as_os_str())
@@ -454,14 +452,6 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                         &template_handle,
                     )?;
 
-                    let mut cfg = minify_html::Cfg::new();
-                    cfg.minify_css = true;
-                    cfg.minify_js = true;
-                    cfg.keep_comments = false;
-
-                    let html = minify_html::minify(html.as_bytes(), &cfg);
-                    let html = String::from_utf8(html).unwrap();
-
                     // Write to file
                     let target_file = PathBuf::from(config.dest_dir.as_os_str())
                         .join(page.name.as_str())
@@ -504,6 +494,14 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
             .map_err(|e| ParseFilesError::TemplateEnvironment(e))?
             .render(minijinja::context!(pages => context))
             .map_err(|e| ParseFilesError::TemplateRender(e))?;
+
+        let mut cfg = minify_html::Cfg::new();
+        cfg.minify_css = true;
+        cfg.minify_js = true;
+        cfg.keep_comments = false;
+
+        let html = minify_html::minify(html.as_bytes(), &cfg);
+        let html = String::from_utf8(html).unwrap();
 
         let target_file = PathBuf::from(config.dest_dir.as_path())
             .join(page.get_name())
