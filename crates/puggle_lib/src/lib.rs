@@ -354,8 +354,15 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                             &template_handle,
                         )?;
 
-                        let html = minify_html::minify(html.as_bytes(), &minify_html::Cfg::new());
+                        let mut cfg = minify_html::Cfg::new();
+                        cfg.minify_css = true;
+                        cfg.minify_js = true;
+                        cfg.keep_comments = false;
+
+                        let html = minify_html::minify(html.as_bytes(), &cfg);
                         let html = String::from_utf8(html).unwrap();
+
+                        println!("{html}");
 
                         // Write to file
                         let target_file = PathBuf::from(config.dest_dir.as_os_str())
