@@ -143,14 +143,18 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
     let mut metadata = None;
     let mut record_metadata = false;
     let mut record_code_block = false;
+    let mut record_folded_code_block = false;
     let mut record_heading = false;
+    let mut record_folded_code_block_summary = false;
     let mut new_events = Vec::new();
-    let syntax_set = two_face::syntax::extra_newlines();
-    let mut syntax = syntax_set.find_syntax_plain_text();
-    let theme_set = two_face::theme::extra();
-    let theme = theme_set.get(two_face::theme::EmbeddedThemeName::GruvboxDark);
+    // let syntax_set = two_face::syntax::extra_newlines();
+    // let mut syntax = syntax_set.find_syntax_plain_text();
+    // let theme_set = two_face::theme::extra();
+    // let theme = theme_set.get(two_face::theme::EmbeddedThemeName::DarkNeon);
     let mut codeblock = String::new();
     let mut heading_text = String::new();
+    let mut detected_lang: Option<&str> = None;
+    // let mut prev_folded_line: Option<&str> = None;
 
     for event in parser {
         match event {
@@ -175,8 +179,62 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                     metadata = Some(txt.to_string());
                 }
 
+                // FIXME: Good golly I have to clean this up
                 if record_code_block {
-                    codeblock.push_str(txt);
+                    codeblock.push_str("<pre><code>");
+
+                    for ref mut line in txt.split("\n") {
+                        if line.starts_with("### FOLD_START") {
+                            record_folded_code_block = true;
+                            record_folded_code_block_summary = true;
+                            codeblock.push_str("<details><summary class=\"foldable\">");
+                            continue
+                        }
+
+                        if line.starts_with("### FOLD_END") {
+                            codeblock.push_str("</details>");
+                            // codeblock.push_str("<span>");
+                            // prev_folded_line.map(|line| codeblock.push_str(line));
+                            // codeblock.push_str("</span>");
+                            continue
+                        }
+
+                        if record_folded_code_block && record_folded_code_block_summary {
+                            if let Some(stripped_line) = line.strip_prefix(" ") {
+                                *line = stripped_line;
+                            }
+                            codeblock.push_str(line);
+                            codeblock.push_str("</summary>");
+                            record_folded_code_block_summary = false;
+                            continue
+                        }
+
+                        match (line.get(0..1), detected_lang) {
+                            (Some("+"), Some("diff")) => {
+                                codeblock.push_str("<span style=\"background: green; color: white;\">");
+                                codeblock.push_str(line);
+                                codeblock.push_str("</span>\n");
+                            },
+                            (Some("-"), Some("diff")) => {
+                                codeblock.push_str("<span style=\"background: red; color: white;\">");
+                                codeblock.push_str(line);
+                                codeblock.push_str("</span>\n");
+
+                            },
+                            _ => {
+                                codeblock.push_str("<span>");
+                                codeblock.push_str(line);
+                                codeblock.push_str("</span>\n");
+                                // if record_folded_code_block {
+                                //     prev_folded_line = Some(line);
+                                // }
+                            },
+                        }
+                    }
+                    codeblock = codeblock.trim_end_matches("<span></span>\n").to_string();
+                    codeblock.push_str("</code></pre>");
+
+                    println!("{codeblock}");
                 }
 
                 if record_heading {
@@ -188,23 +246,14 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                 }
             }
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed(lang)))) => {
-                syntax = syntax_set.find_syntax_by_extension(lang).unwrap_or(syntax);
+                detected_lang = Some(lang);
                 record_code_block = true;
             }
             Event::End(TagEnd::CodeBlock) => {
-                let html = syntect::html::highlighted_html_for_string(
-                    codeblock.as_str(),
-                    &syntax_set,
-                    &syntax,
-                    &theme,
-                )
-                .unwrap();
-
+                let html_event = Event::Html(CowStr::from(codeblock.clone()));
+                new_events.push(html_event);
                 codeblock.clear();
                 record_code_block = false;
-
-                let html_event = Event::Html(CowStr::from(html));
-                new_events.push(html_event);
             }
             Event::Start(Tag::Heading { .. }) => {
                 record_heading = true;
