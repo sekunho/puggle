@@ -13,7 +13,13 @@ pub enum ServerError {
 }
 
 pub async fn run(config: Config) -> Result<(), ServerError> {
-    let app = Router::new().nest_service("/", ServeDir::new(config.dest_dir));
+    let app = Router::new().nest_service(
+        "/",
+        ServeDir::new(config.dest_dir)
+            .precompressed_gzip()
+            .precompressed_br()
+            .precompressed_zstd(),
+    );
 
     let local_address = SocketAddr::from(([0, 0, 0, 0], 3000));
     let listener = TcpListener::bind(local_address).await?;
