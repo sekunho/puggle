@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
+    fs::File,
     path::{Path, PathBuf},
 };
 
@@ -9,12 +10,14 @@ use pulldown_cmark::{CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Ta
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
+use url::Url;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub pages: Vec<Page>,
     pub templates_dir: PathBuf,
     pub dest_dir: PathBuf,
+    pub base_url: Url,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -94,6 +97,7 @@ pub struct Metadata {
     pub cover: Option<String>,
     pub summary: Option<String>,
     pub aliases: Option<Vec<PathBuf>>,
+    pub author_email: Option<String>,
     pub custom: Option<HashMap<String, String>>,
 }
 
@@ -168,8 +172,8 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
             }
             Event::Code(CowStr::Borrowed(txt)) => {
                 if record_heading {
-                    let code = format!("<code>{txt}</code>");
-                    heading_text.push_str(code.as_ref());
+                    // let code = format!("<code>{txt}</code>");
+                    heading_text.push_str(txt);
                 } else {
                     new_events.push(event);
                 }
@@ -188,7 +192,7 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                             record_folded_code_block = true;
                             record_folded_code_block_summary = true;
                             codeblock.push_str("<details><summary class=\"foldable\">");
-                            continue
+                            continue;
                         }
 
                         if line.starts_with("### FOLD_END") {
@@ -196,7 +200,7 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                             // codeblock.push_str("<span>");
                             // prev_folded_line.map(|line| codeblock.push_str(line));
                             // codeblock.push_str("</span>");
-                            continue
+                            continue;
                         }
 
                         if record_folded_code_block && record_folded_code_block_summary {
@@ -206,21 +210,22 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                             codeblock.push_str(line);
                             codeblock.push_str("</summary>");
                             record_folded_code_block_summary = false;
-                            continue
+                            continue;
                         }
 
                         match (line.get(0..1), detected_lang) {
                             (Some("+"), Some("diff")) => {
-                                codeblock.push_str("<span style=\"background: green; color: white;\">");
+                                codeblock
+                                    .push_str("<span style=\"background: green; color: white;\">");
                                 codeblock.push_str(line);
                                 codeblock.push_str("</span>\n");
-                            },
+                            }
                             (Some("-"), Some("diff")) => {
-                                codeblock.push_str("<span style=\"background: red; color: white;\">");
+                                codeblock
+                                    .push_str("<span style=\"background: red; color: white;\">");
                                 codeblock.push_str(line);
                                 codeblock.push_str("</span>\n");
-
-                            },
+                            }
                             _ => {
                                 codeblock.push_str("<span>");
                                 codeblock.push_str(line);
@@ -228,7 +233,7 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                                 // if record_folded_code_block {
                                 //     prev_folded_line = Some(line);
                                 // }
-                            },
+                            }
                         }
                     }
                     codeblock = codeblock.trim_end_matches("<span></span>\n").to_string();
@@ -261,8 +266,10 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
             Event::End(TagEnd::Heading(heading_level)) => {
                 let slug = heading_text.replace(" ", "-").to_lowercase();
                 let slug = slug.trim();
+                // FIXME: bruh
+                let heading_url = format!("https://sekun.net/{}", slug);
                 let heading =
-                    format!("<{heading_level} id=\"{slug}\"><a href=\"#{slug}\">{heading_text}</a></{heading_level}>");
+                    format!("<{heading_level} id=\"{slug}\"><a href=\"{heading_url}\">{heading_text}</a></{heading_level}>");
                 let html_event = Event::Html(CowStr::from(heading));
                 new_events.push(html_event);
                 heading_text.clear();
@@ -293,6 +300,19 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
         events: new_events,
     };
     Ok(pp)
+}
+
+fn render_partial(
+    inner: String,
+    metadata: &Metadata,
+    template_handle: &TemplateHandle,
+) -> Result<String, minijinja::Error> {
+    let html = template_handle
+        .env
+        .template_from_str(inner.as_str())?
+        .render(minijinja::context!(metadata => metadata))?;
+
+    Ok(html)
 }
 
 fn render_entry(
@@ -349,6 +369,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     cmark_opts.insert(pulldown_cmark::Options::ENABLE_WIKILINKS);
 
     let mut context: HashMap<&str, Vec<Metadata>> = HashMap::new();
+    let mut rss_context: HashMap<&str, Vec<rss::Item>> = HashMap::new();
 
     let pages_with_entries: Vec<&PageEntries> =
         config.pages.iter().fold(Vec::new(), |mut acc, page| {
@@ -361,7 +382,8 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
         });
 
     for page in pages_with_entries {
-        let mut metadata_list = vec![];
+        let mut metadata_list = Vec::new();
+        let mut rss_items: Vec<rss::Item> = Vec::new();
 
         for entry in page.entries.iter() {
             match entry {
@@ -397,11 +419,39 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                             )))?;
 
                         let html = render_entry(
-                            html_partial,
+                            html_partial.clone(),
                             &metadata,
                             template_path.as_path(),
                             &template_handle,
                         )?;
+
+                        let page_url = config
+                            .base_url
+                            .join(metadata.file_name.as_str())
+                            .expect("failed to join file name with base URL");
+
+                        let guid = rss::GuidBuilder::default()
+                            .value(page_url.to_string())
+                            .permalink(false)
+                            .build();
+
+                        let rendered_html_partial =
+                            render_partial(html_partial, &metadata, &template_handle).unwrap();
+
+                        let item = rss::ItemBuilder::default()
+                            .title(metadata.title.clone())
+                            .author(metadata.author_email.clone())
+                            .content(rendered_html_partial)
+                            .description(metadata.summary.clone())
+                            .link(page_url.to_string())
+                            .pub_date(metadata.created_at.map(|ts| {
+                                ts.format(&time::format_description::well_known::Rfc2822)
+                                    .unwrap()
+                            }))
+                            .guid(guid)
+                            .build();
+
+                        rss_items.push(item);
 
                         // Write to file
                         let target_file = PathBuf::from(config.dest_dir.as_os_str())
@@ -487,11 +537,38 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                         .unwrap();
 
                     let html = render_entry(
-                        html_partial,
+                        html_partial.clone(),
                         &metadata,
                         template_path.as_path(),
                         &template_handle,
                     )?;
+
+                    let page_url = config
+                        .base_url
+                        .join(metadata.file_name.as_str())
+                        .expect("failed to join file name with base URL");
+
+                    let guid = rss::GuidBuilder::default()
+                        .value(page_url.to_string())
+                        .permalink(false)
+                        .build();
+                    let rendered_html_partial =
+                        render_partial(html_partial, &metadata, &template_handle).unwrap();
+
+                    let item = rss::ItemBuilder::default()
+                        .title(metadata.clone().title)
+                        .author(metadata.author_email.clone())
+                        .content(rendered_html_partial.clone())
+                        .description(metadata.clone().summary)
+                        .link(page_url.to_string())
+                        .pub_date(metadata.created_at.map(|ts| {
+                            ts.format(&time::format_description::well_known::Rfc2822)
+                                .unwrap()
+                        }))
+                        .guid(guid)
+                        .build();
+
+                    rss_items.push(item);
 
                     // Write to file
                     let target_file = PathBuf::from(config.dest_dir.as_os_str())
@@ -517,6 +594,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
             }
 
             context.insert(page.name.as_str(), metadata_list.clone());
+            rss_context.insert(page.name.as_str(), rss_items.clone());
         }
     }
 
@@ -550,6 +628,35 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
         }
 
         let _ = std::fs::write(target_file, html);
+    }
+
+    // Write RSS feeds
+    for (feed_name, rss_items) in rss_context.into_iter() {
+        // Create RSS feed
+        let channel = rss::ChannelBuilder::default()
+            .title(feed_name)
+            .link(config.base_url.to_string())
+            .description("Technical writings, and other yappings of sekun")
+            .items(rss_items.clone())
+            .language("en".to_string())
+            .atom_ext(
+                Some(rss::extension::atom::AtomExtension {
+                    links: vec![rss::extension::atom::Link {
+                        rel: "self".into(),
+                        href: config.base_url.to_string(),
+                        ..Default::default()
+                    }],
+                })
+            )
+            .build();
+
+        let target_dir = PathBuf::from(config.dest_dir.as_os_str())
+            .join(feed_name)
+            .with_extension("rss");
+
+        let mut rss_buffer = File::create(target_dir).unwrap();
+        channel.write_to(&mut rss_buffer).unwrap();
+        // channel.validate().unwrap();
     }
 
     Ok(())
