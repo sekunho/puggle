@@ -5,14 +5,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use minijinja::{value::Kwargs, Environment, State, Value};
+use minijinja::{Environment, State, Value, value::Kwargs};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
 use url::Url;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub pages: Vec<Page>,
     pub templates_dir: PathBuf,
@@ -23,6 +23,7 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct PageEntries {
     name: String,
+    description: Option<String>,
     template_path: PathBuf,
     entries: Vec<Entry>,
 }
@@ -143,7 +144,14 @@ pub struct PuggleParser<'a> {
     pub events: Vec<Event<'a>>,
 }
 
-pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
+#[derive(Clone)]
+pub struct RssFeed {
+    pub name: String,
+    pub description: Option<String>,
+    pub items: Vec<rss::Item>,
+}
+
+pub fn parse<'a>(config: Config, parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
     let mut metadata = None;
     let mut record_metadata = false;
     let mut record_code_block = false;
@@ -267,9 +275,13 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                 let slug = heading_text.replace(" ", "-").to_lowercase();
                 let slug = slug.trim();
                 // FIXME: bruh
-                let heading_url = format!("https://sekun.net/{}", slug);
-                let heading =
-                    format!("<{heading_level} id=\"{slug}\"><a href=\"{heading_url}\">{heading_text}</a></{heading_level}>");
+                let heading_url = config
+                    .base_url
+                    .join(slug)
+                    .expect("unable to construct heading URL");
+                let heading = format!(
+                    "<{heading_level} id=\"{slug}\"><a href=\"{heading_url}\">{heading_text}</a></{heading_level}>"
+                );
                 let html_event = Event::Html(CowStr::from(heading));
                 new_events.push(html_event);
                 heading_text.clear();
@@ -369,7 +381,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     cmark_opts.insert(pulldown_cmark::Options::ENABLE_WIKILINKS);
 
     let mut context: HashMap<&str, Vec<Metadata>> = HashMap::new();
-    let mut rss_context: HashMap<&str, Vec<rss::Item>> = HashMap::new();
+    let mut feed_context: HashMap<&str, RssFeed> = HashMap::new();
 
     let pages_with_entries: Vec<&PageEntries> =
         config.pages.iter().fold(Vec::new(), |mut acc, page| {
@@ -396,7 +408,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                     for file in files {
                         let markdown = std::fs::read_to_string(file.as_path())?;
                         let parser = Parser::new_ext(markdown.as_str(), cmark_opts);
-                        let pp = parse(parser)?;
+                        let pp = parse(config.clone(), parser)?;
 
                         let mut html_partial = String::new();
 
@@ -520,7 +532,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                 } => {
                     let markdown = std::fs::read_to_string(markdown_path.as_path())?;
                     let parser = Parser::new_ext(markdown.as_str(), cmark_opts);
-                    let pp = parse(parser)?;
+                    let pp = parse(config.clone(), parser)?;
                     let mut html_partial = String::new();
 
                     pulldown_cmark::html::push_html(&mut html_partial, pp.events.into_iter());
@@ -594,7 +606,20 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
             }
 
             context.insert(page.name.as_str(), metadata_list.clone());
-            rss_context.insert(page.name.as_str(), rss_items.clone());
+
+            match feed_context.get_mut(page.name.as_str()) {
+                Some(feed) => feed.items.append(&mut rss_items),
+                None => {
+                    feed_context.insert(
+                        page.name.as_str(),
+                        RssFeed {
+                            name: page.name.clone(),
+                            description: page.description.clone(),
+                            items: rss_items.clone(),
+                        },
+                    );
+                }
+            }
         }
     }
 
@@ -631,23 +656,21 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     }
 
     // Write RSS feeds
-    for (feed_name, rss_items) in rss_context.into_iter() {
+    for (feed_name, rss_feed) in feed_context.into_iter() {
         // Create RSS feed
         let channel = rss::ChannelBuilder::default()
             .title(feed_name)
             .link(config.base_url.to_string())
-            .description("Technical writings, and other yappings of sekun")
-            .items(rss_items.clone())
+            .description(rss_feed.description.unwrap_or("".to_string()))
+            .items(rss_feed.items.clone())
             .language("en".to_string())
-            .atom_ext(
-                Some(rss::extension::atom::AtomExtension {
-                    links: vec![rss::extension::atom::Link {
-                        rel: "self".into(),
-                        href: config.base_url.to_string(),
-                        ..Default::default()
-                    }],
-                })
-            )
+            .atom_ext(Some(rss::extension::atom::AtomExtension {
+                links: vec![rss::extension::atom::Link {
+                    rel: "self".into(),
+                    href: config.base_url.to_string(),
+                    ..Default::default()
+                }],
+            }))
             .build();
 
         let target_dir = PathBuf::from(config.dest_dir.as_os_str())
