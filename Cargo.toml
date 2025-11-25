@@ -12,18 +12,18 @@ opt-level = 3
 
 [workspace.package]
 authors = ["SEKUN <software@sekun.net>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://github.com/sekunho/puggle"
 include = ["../../LICENSE", "**/*.rs", "Cargo.toml"]
 license = "AGPL-3.0-only"
 repository = "https://github.com/sekunho/puggle"
-rust-version = "1.79"
-version = "0.1.0-alpha"
+rust-version = "1.91.1"
+version = "0.0.1"
 
 [workspace.dependencies]
-puggle = { path = "crates/puggle", version = "0.1.0-alpha" }
-puggle_lib = { path = "crates/puggle_lib", version = "0.1.0-alpha" }
-puggle_server = { path = "crates/puggle_server", version = "0.1.0-alpha" }
+puggle = { path = "crates/puggle", version = "0.0.1" }
+puggle_lib = { path = "crates/puggle_lib", version = "0.0.1" }
+puggle_server = { path = "crates/puggle_server", version = "0.0.1" }
 
 # External dependencies
 
