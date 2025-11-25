@@ -39,6 +39,7 @@ serde_yaml = "0.9"
 ## Web
 axum = { version = "0.7", features = ["macros"] }
 tower-http = { version = "0.5", features = ["fs"] }
+url = { version = "2.5", features = [ "serde" ] }
 
 ## Templating
 minijinja = { version = "2.0", features = ["loader", "multi_template"] }
@@ -58,4 +59,7 @@ thiserror = { version = "1.0" }
 color-eyre = { version = "0.6.3" }
 
 ## Types
-time = { version = "0.3", features = ["serde-well-known"] }
+time = { version = "0.3", features = ["serde-well-known", "formatting"] }
+
+## Muhhhh feeeds
+rss = { version = "2.0", features = [ "atom" ] }
