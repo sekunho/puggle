@@ -21,9 +21,12 @@ pub struct Config {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct PageEntries {
+pub struct PageWithEntries {
     name: String,
     description: Option<String>,
+    #[serde(default)]
+    rss: bool,
+    rss_name: Option<String>,
     template_path: PathBuf,
     entries: Vec<Entry>,
 }
@@ -37,21 +40,21 @@ pub struct StandalonePage {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Page {
-    WithEntries(PageEntries),
+    WithEntries(PageWithEntries),
     Standalone(StandalonePage),
 }
 
 impl Page {
     fn get_template_path(&self) -> &Path {
         match self {
-            Page::WithEntries(PageEntries { template_path, .. }) => template_path.as_path(),
+            Page::WithEntries(PageWithEntries { template_path, .. }) => template_path.as_path(),
             Page::Standalone(StandalonePage { template_path, .. }) => template_path.as_path(),
         }
     }
 
     fn get_name(&self) -> &str {
         match self {
-            Page::WithEntries(PageEntries { name, .. }) => name.as_str(),
+            Page::WithEntries(PageWithEntries { name, .. }) => name.as_str(),
             Page::Standalone(StandalonePage { name, .. }) => name.as_str(),
         }
     }
@@ -145,8 +148,8 @@ pub struct PuggleParser<'a> {
 }
 
 #[derive(Clone)]
-pub struct RssFeed {
-    pub name: String,
+pub struct RssFeed<'a> {
+    pub name: Option<&'a String>,
     pub description: Option<String>,
     pub items: Vec<rss::Item>,
 }
@@ -246,8 +249,6 @@ pub fn parse<'a>(config: Config, parser: Parser<'a>) -> color_eyre::Result<Puggl
                     }
                     codeblock = codeblock.trim_end_matches("<span></span>\n").to_string();
                     codeblock.push_str("</code></pre>");
-
-                    println!("{codeblock}");
                 }
 
                 if record_heading {
@@ -366,6 +367,7 @@ fn get_markdown_paths(dir: &Path) -> color_eyre::Result<Vec<PathBuf>> {
 }
 
 pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
+    println!("Config: {:#?}", config);
     let template_handle = TemplateHandle::new(config.templates_dir.as_path());
     let mut cmark_opts = pulldown_cmark::Options::empty();
 
@@ -383,7 +385,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     let mut context: HashMap<&str, Vec<Metadata>> = HashMap::new();
     let mut feed_context: HashMap<&str, RssFeed> = HashMap::new();
 
-    let pages_with_entries: Vec<&PageEntries> =
+    let pages_with_entries: Vec<&PageWithEntries> =
         config.pages.iter().fold(Vec::new(), |mut acc, page| {
             if let Page::WithEntries(page) = page {
                 acc.push(page);
@@ -437,33 +439,16 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                             &template_handle,
                         )?;
 
-                        let page_url = config
-                            .base_url
-                            .join(metadata.file_name.as_str())
-                            .expect("failed to join file name with base URL");
-
-                        let guid = rss::GuidBuilder::default()
-                            .value(page_url.to_string())
-                            .permalink(false)
-                            .build();
-
-                        let rendered_html_partial =
-                            render_partial(html_partial, &metadata, &template_handle).unwrap();
-
-                        let item = rss::ItemBuilder::default()
-                            .title(metadata.title.clone())
-                            .author(metadata.author_email.clone())
-                            .content(rendered_html_partial)
-                            .description(metadata.summary.clone())
-                            .link(page_url.to_string())
-                            .pub_date(metadata.created_at.map(|ts| {
-                                ts.format(&time::format_description::well_known::Rfc2822)
-                                    .unwrap()
-                            }))
-                            .guid(guid)
-                            .build();
-
-                        rss_items.push(item);
+                        if page.rss {
+                            let item = generate_rss_item(
+                                &template_handle,
+                                &config,
+                                metadata.clone(),
+                                html_partial.clone(),
+                            )
+                            .unwrap();
+                            rss_items.push(item);
+                        }
 
                         // Write to file
                         let target_file = PathBuf::from(config.dest_dir.as_os_str())
@@ -555,32 +540,16 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                         &template_handle,
                     )?;
 
-                    let page_url = config
-                        .base_url
-                        .join(metadata.file_name.as_str())
-                        .expect("failed to join file name with base URL");
-
-                    let guid = rss::GuidBuilder::default()
-                        .value(page_url.to_string())
-                        .permalink(false)
-                        .build();
-                    let rendered_html_partial =
-                        render_partial(html_partial, &metadata, &template_handle).unwrap();
-
-                    let item = rss::ItemBuilder::default()
-                        .title(metadata.clone().title)
-                        .author(metadata.author_email.clone())
-                        .content(rendered_html_partial.clone())
-                        .description(metadata.clone().summary)
-                        .link(page_url.to_string())
-                        .pub_date(metadata.created_at.map(|ts| {
-                            ts.format(&time::format_description::well_known::Rfc2822)
-                                .unwrap()
-                        }))
-                        .guid(guid)
-                        .build();
-
-                    rss_items.push(item);
+                    if page.rss {
+                        let item = generate_rss_item(
+                            &template_handle,
+                            &config,
+                            metadata.clone(),
+                            html_partial.clone(),
+                        )
+                        .unwrap();
+                        rss_items.push(item);
+                    }
 
                     // Write to file
                     let target_file = PathBuf::from(config.dest_dir.as_os_str())
@@ -613,7 +582,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                     feed_context.insert(
                         page.name.as_str(),
                         RssFeed {
-                            name: page.name.clone(),
+                            name: page.rss_name.as_ref(),
                             description: page.description.clone(),
                             items: rss_items.clone(),
                         },
@@ -656,10 +625,10 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     }
 
     // Write RSS feeds
-    for (feed_name, rss_feed) in feed_context.into_iter() {
+    for (page_name, rss_feed) in feed_context.into_iter() {
         // Create RSS feed
         let channel = rss::ChannelBuilder::default()
-            .title(feed_name)
+            .title(rss_feed.name.map_or(page_name, |feed_name| feed_name.as_str()))
             .link(config.base_url.to_string())
             .description(rss_feed.description.unwrap_or("".to_string()))
             .items(rss_feed.items.clone())
@@ -674,7 +643,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
             .build();
 
         let target_dir = PathBuf::from(config.dest_dir.as_os_str())
-            .join(feed_name)
+            .join(page_name)
             .with_extension("rss");
 
         let mut rss_buffer = File::create(target_dir).unwrap();
@@ -697,4 +666,38 @@ fn published_on(state: &State, value: Value, kwargs: Kwargs) -> Result<String, m
         "Published on <time datetime=\"{}\">{} UTC</time>",
         date_str, user_date_str
     ))
+}
+
+fn generate_rss_item(
+    template_handle: &TemplateHandle,
+    config: &Config,
+    metadata: Metadata,
+    html: String,
+) -> Result<rss::Item, minijinja::Error> {
+    let page_url = config
+        .base_url
+        .join(metadata.file_name.as_str())
+        .expect("failed to join file name with base URL");
+
+    let guid = rss::GuidBuilder::default()
+        .value(page_url.to_string())
+        .permalink(false)
+        .build();
+
+    let rendered_html_partial = render_partial(html, &metadata, &template_handle).unwrap();
+
+    let item = rss::ItemBuilder::default()
+        .title(metadata.title.clone())
+        .author(metadata.author_email.clone())
+        .content(rendered_html_partial)
+        .description(metadata.summary.clone())
+        .link(page_url.to_string())
+        .pub_date(metadata.created_at.map(|ts| {
+            ts.format(&time::format_description::well_known::Rfc2822)
+                .unwrap()
+        }))
+        .guid(guid)
+        .build();
+
+    Ok(item)
 }
