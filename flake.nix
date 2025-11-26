@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
     crane.url = "github:ipetkov/crane";
@@ -10,7 +10,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-analyzer-src.follows = "";
     };
-
   };
 
   outputs = { self, nixpkgs, flake-utils, pre-commit-hooks, fenix, crane }:
@@ -91,6 +90,7 @@
               cargo-watch
               just
               watchexec
+              self.packages.${system}.puggle
             ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin ([ pkgs.libiconv ]);
           };
         };

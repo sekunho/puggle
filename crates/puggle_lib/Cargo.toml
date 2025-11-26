@@ -22,3 +22,5 @@ two-face.workspace = true
 time.workspace = true
 config.workspace = true
 color-eyre.workspace = true
+rss.workspace = true
+url.workspace = true

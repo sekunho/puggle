@@ -1,25 +1,32 @@
 use std::{
     collections::HashMap,
     ffi::OsStr,
+    fs::File,
     path::{Path, PathBuf},
 };
 
-use minijinja::{value::Kwargs, Environment, State, Value};
+use minijinja::{Environment, State, Value, value::Kwargs};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
+use url::Url;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub pages: Vec<Page>,
     pub templates_dir: PathBuf,
     pub dest_dir: PathBuf,
+    pub base_url: Url,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct PageEntries {
+pub struct PageWithEntries {
     name: String,
+    description: Option<String>,
+    #[serde(default)]
+    rss: bool,
+    rss_name: Option<String>,
     template_path: PathBuf,
     entries: Vec<Entry>,
 }
@@ -33,21 +40,21 @@ pub struct StandalonePage {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Page {
-    WithEntries(PageEntries),
+    WithEntries(PageWithEntries),
     Standalone(StandalonePage),
 }
 
 impl Page {
     fn get_template_path(&self) -> &Path {
         match self {
-            Page::WithEntries(PageEntries { template_path, .. }) => template_path.as_path(),
+            Page::WithEntries(PageWithEntries { template_path, .. }) => template_path.as_path(),
             Page::Standalone(StandalonePage { template_path, .. }) => template_path.as_path(),
         }
     }
 
     fn get_name(&self) -> &str {
         match self {
-            Page::WithEntries(PageEntries { name, .. }) => name.as_str(),
+            Page::WithEntries(PageWithEntries { name, .. }) => name.as_str(),
             Page::Standalone(StandalonePage { name, .. }) => name.as_str(),
         }
     }
@@ -94,6 +101,7 @@ pub struct Metadata {
     pub cover: Option<String>,
     pub summary: Option<String>,
     pub aliases: Option<Vec<PathBuf>>,
+    pub author_email: Option<String>,
     pub custom: Option<HashMap<String, String>>,
 }
 
@@ -139,7 +147,14 @@ pub struct PuggleParser<'a> {
     pub events: Vec<Event<'a>>,
 }
 
-pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
+#[derive(Clone)]
+pub struct RssFeed<'a> {
+    pub name: Option<&'a String>,
+    pub description: Option<String>,
+    pub items: Vec<rss::Item>,
+}
+
+pub fn parse<'a>(config: Config, parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
     let mut metadata = None;
     let mut record_metadata = false;
     let mut record_code_block = false;
@@ -168,8 +183,8 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
             }
             Event::Code(CowStr::Borrowed(txt)) => {
                 if record_heading {
-                    let code = format!("<code>{txt}</code>");
-                    heading_text.push_str(code.as_ref());
+                    // let code = format!("<code>{txt}</code>");
+                    heading_text.push_str(txt);
                 } else {
                     new_events.push(event);
                 }
@@ -188,7 +203,7 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                             record_folded_code_block = true;
                             record_folded_code_block_summary = true;
                             codeblock.push_str("<details><summary class=\"foldable\">");
-                            continue
+                            continue;
                         }
 
                         if line.starts_with("### FOLD_END") {
@@ -196,7 +211,7 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                             // codeblock.push_str("<span>");
                             // prev_folded_line.map(|line| codeblock.push_str(line));
                             // codeblock.push_str("</span>");
-                            continue
+                            continue;
                         }
 
                         if record_folded_code_block && record_folded_code_block_summary {
@@ -206,21 +221,22 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                             codeblock.push_str(line);
                             codeblock.push_str("</summary>");
                             record_folded_code_block_summary = false;
-                            continue
+                            continue;
                         }
 
                         match (line.get(0..1), detected_lang) {
                             (Some("+"), Some("diff")) => {
-                                codeblock.push_str("<span style=\"background: green; color: white;\">");
+                                codeblock
+                                    .push_str("<span style=\"background: green; color: white;\">");
                                 codeblock.push_str(line);
                                 codeblock.push_str("</span>\n");
-                            },
+                            }
                             (Some("-"), Some("diff")) => {
-                                codeblock.push_str("<span style=\"background: red; color: white;\">");
+                                codeblock
+                                    .push_str("<span style=\"background: red; color: white;\">");
                                 codeblock.push_str(line);
                                 codeblock.push_str("</span>\n");
-
-                            },
+                            }
                             _ => {
                                 codeblock.push_str("<span>");
                                 codeblock.push_str(line);
@@ -228,13 +244,11 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
                                 // if record_folded_code_block {
                                 //     prev_folded_line = Some(line);
                                 // }
-                            },
+                            }
                         }
                     }
                     codeblock = codeblock.trim_end_matches("<span></span>\n").to_string();
                     codeblock.push_str("</code></pre>");
-
-                    println!("{codeblock}");
                 }
 
                 if record_heading {
@@ -261,8 +275,14 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
             Event::End(TagEnd::Heading(heading_level)) => {
                 let slug = heading_text.replace(" ", "-").to_lowercase();
                 let slug = slug.trim();
-                let heading =
-                    format!("<{heading_level} id=\"{slug}\"><a href=\"#{slug}\">{heading_text}</a></{heading_level}>");
+                // FIXME: bruh
+                let heading_url = config
+                    .base_url
+                    .join(slug)
+                    .expect("unable to construct heading URL");
+                let heading = format!(
+                    "<{heading_level} id=\"{slug}\"><a href=\"{heading_url}\">{heading_text}</a></{heading_level}>"
+                );
                 let html_event = Event::Html(CowStr::from(heading));
                 new_events.push(html_event);
                 heading_text.clear();
@@ -293,6 +313,19 @@ pub fn parse<'a>(parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
         events: new_events,
     };
     Ok(pp)
+}
+
+fn render_partial(
+    inner: String,
+    metadata: &Metadata,
+    template_handle: &TemplateHandle,
+) -> Result<String, minijinja::Error> {
+    let html = template_handle
+        .env
+        .template_from_str(inner.as_str())?
+        .render(minijinja::context!(metadata => metadata))?;
+
+    Ok(html)
 }
 
 fn render_entry(
@@ -334,6 +367,7 @@ fn get_markdown_paths(dir: &Path) -> color_eyre::Result<Vec<PathBuf>> {
 }
 
 pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
+    println!("Config: {:#?}", config);
     let template_handle = TemplateHandle::new(config.templates_dir.as_path());
     let mut cmark_opts = pulldown_cmark::Options::empty();
 
@@ -349,8 +383,9 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     cmark_opts.insert(pulldown_cmark::Options::ENABLE_WIKILINKS);
 
     let mut context: HashMap<&str, Vec<Metadata>> = HashMap::new();
+    let mut feed_context: HashMap<&str, RssFeed> = HashMap::new();
 
-    let pages_with_entries: Vec<&PageEntries> =
+    let pages_with_entries: Vec<&PageWithEntries> =
         config.pages.iter().fold(Vec::new(), |mut acc, page| {
             if let Page::WithEntries(page) = page {
                 acc.push(page);
@@ -361,7 +396,8 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
         });
 
     for page in pages_with_entries {
-        let mut metadata_list = vec![];
+        let mut metadata_list = Vec::new();
+        let mut rss_items: Vec<rss::Item> = Vec::new();
 
         for entry in page.entries.iter() {
             match entry {
@@ -374,7 +410,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                     for file in files {
                         let markdown = std::fs::read_to_string(file.as_path())?;
                         let parser = Parser::new_ext(markdown.as_str(), cmark_opts);
-                        let pp = parse(parser)?;
+                        let pp = parse(config.clone(), parser)?;
 
                         let mut html_partial = String::new();
 
@@ -397,11 +433,22 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                             )))?;
 
                         let html = render_entry(
-                            html_partial,
+                            html_partial.clone(),
                             &metadata,
                             template_path.as_path(),
                             &template_handle,
                         )?;
+
+                        if page.rss {
+                            let item = generate_rss_item(
+                                &template_handle,
+                                &config,
+                                metadata.clone(),
+                                html_partial.clone(),
+                            )
+                            .unwrap();
+                            rss_items.push(item);
+                        }
 
                         // Write to file
                         let target_file = PathBuf::from(config.dest_dir.as_os_str())
@@ -470,7 +517,7 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                 } => {
                     let markdown = std::fs::read_to_string(markdown_path.as_path())?;
                     let parser = Parser::new_ext(markdown.as_str(), cmark_opts);
-                    let pp = parse(parser)?;
+                    let pp = parse(config.clone(), parser)?;
                     let mut html_partial = String::new();
 
                     pulldown_cmark::html::push_html(&mut html_partial, pp.events.into_iter());
@@ -487,11 +534,22 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                         .unwrap();
 
                     let html = render_entry(
-                        html_partial,
+                        html_partial.clone(),
                         &metadata,
                         template_path.as_path(),
                         &template_handle,
                     )?;
+
+                    if page.rss {
+                        let item = generate_rss_item(
+                            &template_handle,
+                            &config,
+                            metadata.clone(),
+                            html_partial.clone(),
+                        )
+                        .unwrap();
+                        rss_items.push(item);
+                    }
 
                     // Write to file
                     let target_file = PathBuf::from(config.dest_dir.as_os_str())
@@ -517,6 +575,20 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
             }
 
             context.insert(page.name.as_str(), metadata_list.clone());
+
+            match feed_context.get_mut(page.name.as_str()) {
+                Some(feed) => feed.items.append(&mut rss_items),
+                None => {
+                    feed_context.insert(
+                        page.name.as_str(),
+                        RssFeed {
+                            name: page.rss_name.as_ref(),
+                            description: page.description.clone(),
+                            items: rss_items.clone(),
+                        },
+                    );
+                }
+            }
         }
     }
 
@@ -552,6 +624,33 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
         let _ = std::fs::write(target_file, html);
     }
 
+    // Write RSS feeds
+    for (page_name, rss_feed) in feed_context.into_iter() {
+        // Create RSS feed
+        let channel = rss::ChannelBuilder::default()
+            .title(rss_feed.name.map_or(page_name, |feed_name| feed_name.as_str()))
+            .link(config.base_url.to_string())
+            .description(rss_feed.description.unwrap_or("".to_string()))
+            .items(rss_feed.items.clone())
+            .language("en".to_string())
+            .atom_ext(Some(rss::extension::atom::AtomExtension {
+                links: vec![rss::extension::atom::Link {
+                    rel: "self".into(),
+                    href: config.base_url.to_string(),
+                    ..Default::default()
+                }],
+            }))
+            .build();
+
+        let target_dir = PathBuf::from(config.dest_dir.as_os_str())
+            .join(page_name)
+            .with_extension("rss");
+
+        let mut rss_buffer = File::create(target_dir).unwrap();
+        channel.write_to(&mut rss_buffer).unwrap();
+        // channel.validate().unwrap();
+    }
+
     Ok(())
 }
 
@@ -567,4 +666,38 @@ fn published_on(state: &State, value: Value, kwargs: Kwargs) -> Result<String, m
         "Published on <time datetime=\"{}\">{} UTC</time>",
         date_str, user_date_str
     ))
+}
+
+fn generate_rss_item(
+    template_handle: &TemplateHandle,
+    config: &Config,
+    metadata: Metadata,
+    html: String,
+) -> Result<rss::Item, minijinja::Error> {
+    let page_url = config
+        .base_url
+        .join(metadata.file_name.as_str())
+        .expect("failed to join file name with base URL");
+
+    let guid = rss::GuidBuilder::default()
+        .value(page_url.to_string())
+        .permalink(false)
+        .build();
+
+    let rendered_html_partial = render_partial(html, &metadata, &template_handle).unwrap();
+
+    let item = rss::ItemBuilder::default()
+        .title(metadata.title.clone())
+        .author(metadata.author_email.clone())
+        .content(rendered_html_partial)
+        .description(metadata.summary.clone())
+        .link(page_url.to_string())
+        .pub_date(metadata.created_at.map(|ts| {
+            ts.format(&time::format_description::well_known::Rfc2822)
+                .unwrap()
+        }))
+        .guid(guid)
+        .build();
+
+    Ok(item)
 }
