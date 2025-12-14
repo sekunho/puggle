@@ -6,7 +6,9 @@ use std::{
 };
 
 use minijinja::{Environment, State, Value, value::Kwargs};
-use pulldown_cmark::{CodeBlockKind, CowStr, Event, MetadataBlockKind, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    CodeBlockKind, CowStr, Event, HeadingLevel, MetadataBlockKind, Parser, Tag, TagEnd,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -154,7 +156,11 @@ pub struct RssFeed<'a> {
     pub items: Vec<rss::Item>,
 }
 
-pub fn parse<'a>(config: Config, parser: Parser<'a>) -> color_eyre::Result<PuggleParser<'a>> {
+pub fn parse<'a>(
+    config: Config,
+    parser: Parser<'a>,
+    page_path: String,
+) -> color_eyre::Result<PuggleParser<'a>> {
     let mut metadata = None;
     let mut record_metadata = false;
     let mut record_code_block = false;
@@ -272,14 +278,24 @@ pub fn parse<'a>(config: Config, parser: Parser<'a>) -> color_eyre::Result<Puggl
             Event::Start(Tag::Heading { .. }) => {
                 record_heading = true;
             }
+            Event::End(TagEnd::Heading(pulldown_cmark::HeadingLevel::H1)) => {
+                let heading = format!("<h1>{heading_text}</h1>",);
+                let html_event = Event::Html(CowStr::from(heading));
+                new_events.push(html_event);
+                heading_text.clear();
+                record_heading = false;
+            }
             Event::End(TagEnd::Heading(heading_level)) => {
                 let slug = heading_text.replace(" ", "-").to_lowercase();
                 let slug = slug.trim();
                 // FIXME: bruh
-                let heading_url = config
+                let mut heading_url = config
                     .base_url
-                    .join(slug)
+                    .join(page_path.as_str())
                     .expect("unable to construct heading URL");
+
+                heading_url.set_fragment(Some(slug));
+
                 let heading = format!(
                     "<{heading_level} id=\"{slug}\"><a href=\"{heading_url}\">{heading_text}</a></{heading_level}>"
                 );
@@ -410,16 +426,22 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                     for file in files {
                         let markdown = std::fs::read_to_string(file.as_path())?;
                         let parser = Parser::new_ext(markdown.as_str(), cmark_opts);
-                        let pp = parse(config.clone(), parser)?;
+                        let md_file_name = file.file_stem().ok_or(ParseFilesError::FileName)?;
+
+                        println!(
+                            "Page path: {}",
+                            format!("{}/{}", page.name, md_file_name.to_str().unwrap())
+                        );
+
+                        let pp = parse(
+                            config.clone(),
+                            parser,
+                            format!("{}/{}", page.name, md_file_name.to_str().unwrap()),
+                        )?;
 
                         let mut html_partial = String::new();
 
                         pulldown_cmark::html::push_html(&mut html_partial, pp.events.into_iter());
-
-                        let md_file_name = file
-                            .as_path()
-                            .file_stem()
-                            .ok_or(ParseFilesError::FileName)?;
 
                         let metadata = pp
                             .metadata
@@ -515,15 +537,18 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
                     markdown_path,
                     template_path,
                 } => {
+                    let md_file_name =
+                        markdown_path.file_stem().ok_or(ParseFilesError::FileName)?;
                     let markdown = std::fs::read_to_string(markdown_path.as_path())?;
                     let parser = Parser::new_ext(markdown.as_str(), cmark_opts);
-                    let pp = parse(config.clone(), parser)?;
+                    let pp = parse(
+                        config.clone(),
+                        parser,
+                        format!("{}/{}", page.name, md_file_name.to_str().unwrap()),
+                    )?;
                     let mut html_partial = String::new();
 
                     pulldown_cmark::html::push_html(&mut html_partial, pp.events.into_iter());
-
-                    let md_file_name =
-                        markdown_path.file_stem().ok_or(ParseFilesError::FileName)?;
 
                     let metadata = pp
                         .metadata
@@ -628,7 +653,11 @@ pub fn build_from_dir(config: Config) -> color_eyre::Result<()> {
     for (page_name, rss_feed) in feed_context.into_iter() {
         // Create RSS feed
         let channel = rss::ChannelBuilder::default()
-            .title(rss_feed.name.map_or(page_name, |feed_name| feed_name.as_str()))
+            .title(
+                rss_feed
+                    .name
+                    .map_or(page_name, |feed_name| feed_name.as_str()),
+            )
             .link(config.base_url.to_string())
             .description(rss_feed.description.unwrap_or("".to_string()))
             .items(rss_feed.items.clone())
