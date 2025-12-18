@@ -44,6 +44,7 @@ url = { version = "2.5", features = [ "serde" ] }
 ## Templating
 minijinja = { version = "2.0", features = ["loader", "multi_template"] }
 minijinja-contrib = { version = "2.0", features = ["datetime"] }
+html-escape = "0.2.13"
 
 ## Async
 tokio = { version = "1.44", features = ["net", "rt-multi-thread"] }

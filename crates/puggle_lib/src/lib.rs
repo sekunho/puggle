@@ -215,7 +215,7 @@ pub fn parse<'a>(
                         if line.starts_with("### FOLD_END") {
                             codeblock.push_str("</details>");
                             // codeblock.push_str("<span>");
-                            // prev_folded_line.map(|line| codeblock.push_str(line));
+                            // prev_folded_line.map(|line| codeblock.push_str());
                             // codeblock.push_str("</span>");
                             continue;
                         }
@@ -224,7 +224,7 @@ pub fn parse<'a>(
                             if let Some(stripped_line) = line.strip_prefix(" ") {
                                 *line = stripped_line;
                             }
-                            codeblock.push_str(line);
+                            codeblock.push_str(html_escape::encode_text(line).as_ref());
                             codeblock.push_str("</summary>");
                             record_folded_code_block_summary = false;
                             continue;
@@ -234,18 +234,18 @@ pub fn parse<'a>(
                             (Some("+"), Some("diff")) => {
                                 codeblock
                                     .push_str("<span style=\"background: green; color: white;\">");
-                                codeblock.push_str(line);
+                                codeblock.push_str(html_escape::encode_text(line).as_ref());
                                 codeblock.push_str("</span>\n");
                             }
                             (Some("-"), Some("diff")) => {
                                 codeblock
                                     .push_str("<span style=\"background: red; color: white;\">");
-                                codeblock.push_str(line);
+                                codeblock.push_str(html_escape::encode_text(line).as_ref());
                                 codeblock.push_str("</span>\n");
                             }
                             _ => {
                                 codeblock.push_str("<span>");
-                                codeblock.push_str(line);
+                                codeblock.push_str(html_escape::encode_text(line).as_ref());
                                 codeblock.push_str("</span>\n");
                                 // if record_folded_code_block {
                                 //     prev_folded_line = Some(line);

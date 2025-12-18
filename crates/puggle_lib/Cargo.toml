@@ -24,3 +24,4 @@ config.workspace = true
 color-eyre.workspace = true
 rss.workspace = true
 url.workspace = true
+html-escape.workspace = true
